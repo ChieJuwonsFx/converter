@@ -1,5 +1,4 @@
-import { useState, useRef, type ChangeEvent, type FormEvent } from "react";
-import axios from "axios";
+import { useState, useRef, useEffect, type ChangeEvent } from "react";
 import { LoaderCircle, ImagePlus, CheckCircle2, AlertTriangle } from "lucide-react";
 
 function App() {
@@ -10,11 +9,53 @@ function App() {
   const [isConverting, setIsConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isRecaptchaReady, setIsRecaptchaReady] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
   const API_URL = `${import.meta.env.VITE_API_BASE_URL}/convert/`;
+
+  useEffect(() => {
+    const loadRecaptcha = () => {
+      if ((window as any).grecaptcha) {
+        setIsRecaptchaReady(true);
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = `https://www.google.com/recaptcha/api.js?render=${SITE_KEY}`;
+      script.async = true;
+      script.defer = true;
+      
+      script.onload = () => {
+        const checkRecaptcha = () => {
+          if ((window as any).grecaptcha && (window as any).grecaptcha.ready) {
+            (window as any).grecaptcha.ready(() => {
+              setIsRecaptchaReady(true);
+            });
+          } else {
+            setTimeout(checkRecaptcha, 100);
+          }
+        };
+        checkRecaptcha();
+      };
+
+      script.onerror = () => {
+        setError("Failed to load reCAPTCHA. Please refresh the page.");
+      };
+
+      document.head.appendChild(script);
+
+      return () => {
+        if (document.head.contains(script)) {
+          document.head.removeChild(script);
+        }
+      };
+    };
+
+    loadRecaptcha();
+  }, [SITE_KEY]);
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -28,10 +69,14 @@ function App() {
     }
   };
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     if (!selectedFile) {
       setError("Pilih file gambar terlebih dahulu.");
+      return;
+    }
+
+    if (!isRecaptchaReady) {
+      setError("reCAPTCHA belum siap. Silakan tunggu sebentar dan coba lagi.");
       return;
     }
 
@@ -40,10 +85,6 @@ function App() {
     setSuccessMsg(null);
 
     try {
-      if (!(window as any).grecaptcha) {
-        throw new Error("reCAPTCHA belum siap");
-      }
-
       const token = await (window as any).grecaptcha.execute(SITE_KEY, { action: "submit" });
 
       const formData = new FormData();
@@ -52,10 +93,19 @@ function App() {
       formData.append("g-recaptcha-response", token);
       if (outputFilename) formData.append("output_filename", outputFilename);
 
-      const response = await axios.post(API_URL, formData, { responseType: "blob" });
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        body: formData,
+      });
 
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const contentDisposition = response.headers["content-disposition"];
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      
+      const contentDisposition = response.headers.get("content-disposition");
       let filename = `converted.${targetFormat}`;
       if (contentDisposition) {
         const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
@@ -75,7 +125,7 @@ function App() {
       setSuccessMsg(`File berhasil dikonversi menjadi ${filename}`);
     } catch (err) {
       console.error(err);
-      setError("Konversi gagal atau reCAPTCHA gagal divalidasi.");
+      setError("Konversi gagal. Silakan coba lagi atau periksa koneksi internet Anda.");
     } finally {
       setIsConverting(false);
     }
@@ -83,14 +133,21 @@ function App() {
 
   return (
     <div className="bg-gray-100 min-h-screen min-w-screen flex flex-col items-center justify-center font-sans text-gray-900 p-4">
-      <div className="w-full mx-auto px-4">
+      <div className="w-full max-w-2xl mx-auto px-4">
         <div className="text-center mb-8">
           <h1 className="text-4xl md:text-5xl font-extrabold text-gray-800">Image Converter</h1>
           <p className="text-gray-600 mt-3 text-lg">Konversi gambar ke berbagai format.</p>
         </div>
 
         <div className="bg-white p-6 md:p-8 rounded-2xl shadow-lg border border-gray-200">
-          <form onSubmit={handleSubmit} className="space-y-6">
+          {!isRecaptchaReady && (
+            <div className="mb-4 p-3 bg-yellow-100 border border-yellow-300 rounded-lg flex items-center gap-2">
+              <LoaderCircle className="h-5 w-5 text-yellow-600 animate-spin" />
+              <span className="text-yellow-700">Loading reCAPTCHA...</span>
+            </div>
+          )}
+
+          <div className="space-y-6">
             <div
               className="border-2 border-dashed border-gray-300 hover:border-indigo-500 transition-all duration-300 rounded-xl p-8 text-center cursor-pointer group"
               onClick={() => fileInputRef.current?.click()}
@@ -154,8 +211,8 @@ function App() {
             </div>
 
             <button
-              type="submit"
-              disabled={!selectedFile || isConverting}
+              onClick={handleSubmit}
+              disabled={!selectedFile || isConverting || !isRecaptchaReady}
               className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 text-lg shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             >
               {isConverting ? (
@@ -180,15 +237,13 @@ function App() {
                 <span>{successMsg}</span>
               </div>
             )}
-          </form>
+          </div>
         </div>
 
         <footer className="text-center mt-6 text-gray-500 text-sm">
           Created by <span className="font-semibold text-gray-600">InnoVixus</span>
         </footer>
       </div>
-
-      <script src={`https://www.google.com/recaptcha/api.js?render=${SITE_KEY}`}></script>
     </div>
   );
 }
