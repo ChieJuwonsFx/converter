@@ -23,7 +23,15 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
-  const API_URL = `${import.meta.env.VITE_API_BASE_URL}/convert/`;
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+  const API_URL = `${API_BASE_URL}/convert/`; 
+  
+  console.log('Environment check:', {
+    SITE_KEY: SITE_KEY ? `${SITE_KEY.slice(0, 10)}...` : '✗ Missing',
+    API_BASE_URL: API_BASE_URL,
+    Final_API_URL: API_URL,
+    NODE_ENV: import.meta.env.MODE
+  });
 
   useEffect(() => {
     if (!SITE_KEY) {
@@ -127,6 +135,7 @@ function App() {
       }
 
       console.log("reCAPTCHA token generated:", token ? "✓" : "✗");
+      console.log("Token preview:", token.substring(0, 20) + "...");
 
       const formData = new FormData();
       formData.append("file", selectedFile);
@@ -289,7 +298,7 @@ function App() {
         </div>
 
         <footer className="text-center mt-6 text-gray-500 text-sm">
-          Created by <span className="font-semibold text-gray-600">InnoVixus</span>
+          Powered by <span className="font-semibold text-gray-600">InnoVixus</span>
         </footer>
       </div>
     </div>
