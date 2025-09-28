@@ -85,7 +85,18 @@ function App() {
     setSuccessMsg(null);
 
     try {
+      if (!(window as any).grecaptcha || !(window as any).grecaptcha.execute) {
+        throw new Error("reCAPTCHA tidak tersedia");
+      }
+
+      console.log("Executing reCAPTCHA...");
       const token = await (window as any).grecaptcha.execute(SITE_KEY, { action: "submit" });
+      
+      if (!token) {
+        throw new Error("reCAPTCHA token kosong");
+      }
+
+      console.log("reCAPTCHA token generated:", token ? "✓" : "✗");
 
       const formData = new FormData();
       formData.append("file", selectedFile);
@@ -93,13 +104,16 @@ function App() {
       formData.append("g-recaptcha-response", token);
       if (outputFilename) formData.append("output_filename", outputFilename);
 
+      console.log("Sending request to:", API_URL);
       const response = await fetch(API_URL, {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error("Server error:", response.status, errorText);
+        throw new Error(`Server error: ${response.status} - ${errorText}`);
       }
 
       const blob = await response.blob();
@@ -124,8 +138,12 @@ function App() {
 
       setSuccessMsg(`File berhasil dikonversi menjadi ${filename}`);
     } catch (err) {
-      console.error(err);
-      setError("Konversi gagal. Silakan coba lagi atau periksa koneksi internet Anda.");
+      console.error("Conversion error:", err);
+      if (err instanceof Error) {
+        setError(`Error: ${err.message}`);
+      } else {
+        setError("Konversi gagal. Silakan coba lagi atau periksa koneksi internet Anda.");
+      }
     } finally {
       setIsConverting(false);
     }
