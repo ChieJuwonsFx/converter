@@ -1,6 +1,15 @@
 import { useState, useRef, useEffect, type ChangeEvent } from "react";
 import { LoaderCircle, ImagePlus, CheckCircle2, AlertTriangle } from "lucide-react";
 
+declare global {
+  interface Window {
+    grecaptcha: {
+      ready: (callback: () => void) => void;
+      execute: (siteKey: string, options: { action: string }) => Promise<string>;
+    };
+  }
+}
+
 function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -17,21 +26,29 @@ function App() {
   const API_URL = `${import.meta.env.VITE_API_BASE_URL}/convert/`;
 
   useEffect(() => {
+    if (!SITE_KEY) {
+      setError("reCAPTCHA configuration missing");
+      return;
+    }
+
     const loadRecaptcha = () => {
-      if ((window as any).grecaptcha) {
+      if (window.grecaptcha) {
         setIsRecaptchaReady(true);
         return;
       }
 
+      console.log("Loading reCAPTCHA with site key:", SITE_KEY);
       const script = document.createElement('script');
       script.src = `https://www.google.com/recaptcha/api.js?render=${SITE_KEY}`;
       script.async = true;
       script.defer = true;
       
       script.onload = () => {
+        console.log("reCAPTCHA script loaded");
         const checkRecaptcha = () => {
-          if ((window as any).grecaptcha && (window as any).grecaptcha.ready) {
-            (window as any).grecaptcha.ready(() => {
+          if (window.grecaptcha && window.grecaptcha.ready) {
+            window.grecaptcha.ready(() => {
+              console.log("reCAPTCHA is ready");
               setIsRecaptchaReady(true);
             });
           } else {
@@ -41,7 +58,8 @@ function App() {
         checkRecaptcha();
       };
 
-      script.onerror = () => {
+      script.onerror = (e) => {
+        console.error("Failed to load reCAPTCHA script:", e);
         setError("Failed to load reCAPTCHA. Please refresh the page.");
       };
 
@@ -56,6 +74,18 @@ function App() {
 
     loadRecaptcha();
   }, [SITE_KEY]);
+
+  if (!SITE_KEY) {
+    return (
+      <div className="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-lg shadow-lg text-center">
+          <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-red-600 mb-2">Configuration Error</h2>
+          <p className="text-gray-600">reCAPTCHA site key is missing. Please check your environment variables.</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -85,12 +115,12 @@ function App() {
     setSuccessMsg(null);
 
     try {
-      if (!(window as any).grecaptcha || !(window as any).grecaptcha.execute) {
+      if (!window.grecaptcha || !window.grecaptcha.execute) {
         throw new Error("reCAPTCHA tidak tersedia");
       }
 
       console.log("Executing reCAPTCHA...");
-      const token = await (window as any).grecaptcha.execute(SITE_KEY, { action: "submit" });
+      const token = await window.grecaptcha.execute(SITE_KEY, { action: "submit" });
       
       if (!token) {
         throw new Error("reCAPTCHA token kosong");
