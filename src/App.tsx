@@ -1,15 +1,6 @@
-import { useState, useRef, useEffect, type ChangeEvent, type FormEvent } from "react";
+import { useState, useRef, type ChangeEvent, type FormEvent } from "react";
 import axios from "axios";
 import { LoaderCircle, ImagePlus, CheckCircle2, AlertTriangle } from "lucide-react";
-
-declare global {
-  interface Window {
-    grecaptcha?: {
-      ready: (cb: () => void) => void;
-      execute: (siteKey: string, options: { action: string }) => Promise<string>;
-    };
-  }
-}
 
 function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -22,16 +13,8 @@ function App() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    const script = document.createElement("script");
-    script.src = `https://www.google.com/recaptcha/api.js?render=${import.meta.env.VITE_RECAPTCHA_SITE_KEY}`;
-    script.async = true;
-    document.body.appendChild(script);
-
-    return () => {
-      document.body.removeChild(script);
-    };
-  }, []);
+  const SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
+  const API_URL = `${import.meta.env.VITE_API_BASE_URL}/convert/`;
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -57,16 +40,11 @@ function App() {
     setSuccessMsg(null);
 
     try {
-      if (!window.grecaptcha) throw new Error("reCAPTCHA belum siap");
+      if (!(window as any).grecaptcha) {
+        throw new Error("reCAPTCHA belum siap");
+      }
 
-      const token = await new Promise<string>((resolve, reject) => {
-        window.grecaptcha?.ready(() => {
-          window.grecaptcha
-            ?.execute(import.meta.env.VITE_RECAPTCHA_SITE_KEY, { action: "submit" })
-            .then(resolve)
-            .catch(reject);
-        });
-      });
+      const token = await (window as any).grecaptcha.execute(SITE_KEY, { action: "submit" });
 
       const formData = new FormData();
       formData.append("file", selectedFile);
@@ -74,8 +52,7 @@ function App() {
       formData.append("g-recaptcha-response", token);
       if (outputFilename) formData.append("output_filename", outputFilename);
 
-      const apiUrl = `${import.meta.env.VITE_API_BASE_URL}/convert/`;
-      const response = await axios.post(apiUrl, formData, { responseType: "blob" });
+      const response = await axios.post(API_URL, formData, { responseType: "blob" });
 
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const contentDisposition = response.headers["content-disposition"];
@@ -108,12 +85,8 @@ function App() {
     <div className="bg-gray-100 min-h-screen min-w-screen flex flex-col items-center justify-center font-sans text-gray-900 p-4">
       <div className="w-full mx-auto px-4">
         <div className="text-center mb-8">
-          <h1 className="text-4xl md:text-5xl font-extrabold text-gray-800">
-            Image Converter
-          </h1>
-          <p className="text-gray-600 mt-3 text-lg">
-            Konversi gambar ke berbagai format.
-          </p>
+          <h1 className="text-4xl md:text-5xl font-extrabold text-gray-800">Image Converter</h1>
+          <p className="text-gray-600 mt-3 text-lg">Konversi gambar ke berbagai format.</p>
         </div>
 
         <div className="bg-white p-6 md:p-8 rounded-2xl shadow-lg border border-gray-200">
@@ -138,11 +111,16 @@ function App() {
                 </>
               ) : (
                 <div className="flex flex-col items-center">
-                  <img src={previewUrl} alt="Preview" className="max-h-40 rounded-lg shadow-md mb-3 border border-gray-300" />
+                  <img
+                    src={previewUrl}
+                    alt="Preview"
+                    className="max-h-40 rounded-lg shadow-md mb-3 border border-gray-300"
+                  />
                   <p className="text-sm font-medium text-gray-700 break-all">{selectedFile?.name}</p>
                 </div>
               )}
             </div>
+
             <div>
               <label htmlFor="format" className="block text-sm font-semibold text-gray-700 mb-2">
                 Konversi ke format:
@@ -209,6 +187,8 @@ function App() {
           Created by <span className="font-semibold text-gray-600">InnoVixus</span>
         </footer>
       </div>
+
+      <script src={`https://www.google.com/recaptcha/api.js?render=${SITE_KEY}`}></script>
     </div>
   );
 }
